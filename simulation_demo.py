@@ -4,7 +4,8 @@ import random
 import json
 
 # API_URL = "http://localhost:8000/transactions/"
-API_URL = "https://repository-name-fraud-detection-par.onrender.com/transactions/"
+#API_URL = "https://repository-name-fraud-detection-par.onrender.com/transactions/"
+API_URL = "https://repository-name-fraud-detection-par.onrender.com/transactions/simulate"
 
 CATEGORIES = ['gas_transport', 'grocery_pos', 'home', 'shopping_net', 'misc_net']
 MERCHANTS = ['gas_station_01', 'supermarket_02', 'online_shop_03', 'luxury_watch_04', 'shady_site_05']
