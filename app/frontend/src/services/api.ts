@@ -1,6 +1,7 @@
 import axios from 'axios';
+{/* const API_BASE_URL = 'http://localhost:8000'; */}
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'https://repository-name-fraud-detection-par.onrender.com';
 
 export const api = axios.create({
     baseURL: API_BASE_URL,
