@@ -42,10 +42,24 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
-# --- Lifecycle ---
+# --- Lifecycle ---  
 @app.on_event("startup")
 def startup():
     init_db()
+
+    db = next(get_db())
+
+    user = db.query(SuperviseurSysteme).filter_by(identifiant="admin").first()
+
+    if not user:
+        user = SuperviseurSysteme(
+            identifiant="admin",
+            motDePasse="admin",
+            role="admin",
+            nom="Admin User"
+        )
+        db.add(user)
+        db.commit()    
 
 # --- TAGS: Authentication & Profile ---
 
