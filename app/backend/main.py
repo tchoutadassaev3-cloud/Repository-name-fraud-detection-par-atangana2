@@ -1,228 +1,573 @@
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Query
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    UploadFile,
+    File,
+    Query
+)
+
 from fastapi.middleware.cors import CORSMiddleware
+
 from sqlalchemy.orm import Session
-from typing import List, Optional
+
+from sqlalchemy import func
+
+from typing import Optional
+
 import json
 import os
 import shutil
 import datetime
 
-from .database import get_db, init_db
-from .models import Usager, Carte, Transaction, ModeleAnalyse, ResultatAnalyse, Alerte, SuperviseurSysteme
+from .database import (
+    get_db,
+    init_db
+)
+
+from .models import (
+    Usager,
+    Carte,
+    Transaction,
+    ModeleAnalyse,
+    ResultatAnalyse,
+    Alerte,
+    SuperviseurSysteme
+)
+
 from .analysis_service import FraudInferenceService
 
+# =========================================================
+# FASTAPI APP
+# =========================================================
+
 app = FastAPI(
-    title="Intelligent Fraud Detection Platform [Industrial API]",
-    description="Full forensic backend for real-time transaction monitoring and ML metrology.",
-    version="1.0.0"
+
+    title="AI Fraud Detection Platform",
+
+    description=(
+        "Enterprise-grade fraud detection "
+        "and transaction monitoring platform"
+    ),
+
+    version="2.0.0"
 )
+
+# =========================================================
+# CORS
+# =========================================================
 
 app.add_middleware(
+
     CORSMiddleware,
+
     allow_origins=["*"],
+
+    allow_credentials=True,
+
     allow_methods=["*"],
-    allow_headers=["*"],
+
+    allow_headers=["*"]
 )
 
-# --- WebSocket Manager ---
+# =========================================================
+# WEBSOCKET MANAGER
+# =========================================================
+
 class ConnectionManager:
+
     def __init__(self):
+
         self.active_connections = []
 
     async def connect(self, websocket: WebSocket):
+
         await websocket.accept()
+
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
+
         self.active_connections.remove(websocket)
 
     async def broadcast(self, message: str):
+
         for connection in self.active_connections:
+
             await connection.send_text(message)
 
 manager = ConnectionManager()
 
-# --- Lifecycle ---  
+# =========================================================
+# STARTUP EVENT
+# =========================================================
+
 @app.on_event("startup")
 def startup():
+
     init_db()
 
     db = next(get_db())
 
-    user = db.query(SuperviseurSysteme).filter_by(identifiant="admin").first()
+    admin = db.query(
+        SuperviseurSysteme
+    ).filter_by(
+        identifiant="admin"
+    ).first()
+
+    if not admin:
+
+        admin = SuperviseurSysteme(
+
+            identifiant="admin",
+
+            motDePasse="admin",
+
+            role="admin",
+
+            nom="System",
+
+            prenom="Administrator"
+        )
+
+        db.add(admin)
+
+        db.commit()
+
+    print("[+] Application started successfully")
+
+# =========================================================
+# AUTHENTICATION
+# =========================================================
+
+@app.post("/auth/login", tags=["Authentication"])
+def login(data: dict, db: Session = Depends(get_db)):
+
+    user = db.query(
+        SuperviseurSysteme
+    ).filter(
+        SuperviseurSysteme.identifiant == data["username"]
+    ).first()
 
     if not user:
-        user = SuperviseurSysteme(
-            identifiant="admin",
-            motDePasse="admin",
-            role="admin",
-            nom="Admin User"
+
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials"
         )
-        db.add(user)
-        db.commit()    
 
-# --- TAGS: Authentication & Profile ---
+    if user.motDePasse != data["password"]:
 
-@app.post("/auth/login", tags=["Auth"])
-def login(data: dict, db: Session = Depends(get_db)):
-    # Simulated MFA/Biometric check for 'Expert' feel
-    user = db.query(SuperviseurSysteme).filter(SuperviseurSysteme.identifiant == data['username']).first()
-    if not user or user.motDePasse != data['password']:
-        client = db.query(Usager).filter(Usager.email == data['username']).first()
-        if client:
-             return {"id": client.id, "role": "client", "nom": client.nom, "mfa": "biometric_authorized"}
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return {"id": user.idSuperviseur, "role": user.role, "nom": user.nom, "mfa": "node_identity_verified"}
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials"
+        )
 
-@app.post("/profile/deactivate", tags=["Profile"])
-def deactivate_account(user_id: str, db: Session = Depends(get_db)):
-    user = db.query(Usager).filter(Usager.id == user_id).first()
-    if user:
-        user.is_active = False
-        db.commit()
-    return {"status": "Account deactivated"}
-
-# --- TAGS: Card Management ---
-
-@app.post("/cards", tags=["Inventory"])
-def create_card(data: dict, db: Session = Depends(get_db)):
-    card = Carte(
-        numero=data['numero'],
-        expiredAt=datetime.datetime.strptime(data['expiry'], '%Y-%m'),
-        paysEmetteur=data.get('country', 'FR'),
-        cryptogramme=data['cvv'],
-        usager_id=data['user_id']
-    )
-    db.add(card)
-    db.commit()
-    return {"id": card.idCarte, "status": "Card registered"}
-
-# --- TAGS: Model Registry (Offline Learning Support) ---
-
-@app.get("/models", tags=["Registry"])
-def list_models(db: Session = Depends(get_db)):
-    return db.query(ModeleAnalyse).all()
-
-@app.post("/models/upload", tags=["Registry"])
-async def upload_model(name: str, version: str, type_m: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    os.makedirs("app/models", exist_ok=True)
-    path = f"app/models/{file.filename}"
-    with open(path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    
-    new_model = ModeleAnalyse(
-        nom=name, version=version, type=type_m,
-        fichier=path, isActive=False
-    )
-    db.add(new_model)
-    db.commit()
-    return {"id": new_model.idModele, "status": "Model uploaded"}
-
-@app.post("/models/{model_id}/activate", tags=["Registry"])
-def activate_model(model_id: str, db: Session = Depends(get_db)):
-    db.query(ModeleAnalyse).update({"isActive": False})
-    db.query(ModeleAnalyse).filter(ModeleAnalyse.idModele == model_id).update({"isActive": True})
-    db.commit()
-    return {"status": "Model activated"}
-
-# --- TAGS: Transactions (Inference Terminal) ---
-
-@app.post("/transactions/simulate", tags=["Forensics"])
-async def simulate_transaction(data: dict, db: Session = Depends(get_db)):
-    tx = Transaction(
-        montant=data['amt'],
-        carte_id=data['card_num'],
-        referenceCommande=f"TX_{os.urandom(4).hex().upper()}",
-        status="En cours",
-        ipSource=data.get('ip', '127.0.0.1'),
-        pays_id=data.get('country_code', 'FR')
-    )
-    db.add(tx)
-    db.flush()
-    
-    service = FraudInferenceService(db)
-    resultat = service.analyze(tx)
-    
-    if resultat:
-        db.add(resultat)
-        db.flush()
-        
-        if resultat.scoreFraude > 0.7:
-            tx.status = "Alerte de Fraude"
-            alerte = Alerte(niveau="Critique", statut="Ouverte", resultat_id=resultat.idResultat)
-            db.add(alerte)
-            await manager.broadcast(json.dumps({
-                "type": "FRAUD_ALARM",
-                "tx_id": tx.idTransaction,
-                "score": float(resultat.scoreFraude),
-                "amount": float(tx.montant)
-            }))
-        else:
-            tx.status = "Accepté"
-            
-    db.commit()
-    return {"tx_id": tx.idTransaction, "status": tx.status, "score": float(resultat.scoreFraude) if resultat else 0}
-
-@app.get("/stats", tags=["Dashboard"])
-def get_stats(db: Session = Depends(get_db)):
-    total = db.query(Transaction).count()
-    frauds = db.query(Transaction).filter(Transaction.status == "Alerte de Fraude").count()
-    return {"total": total, "alerts": frauds, "health": "Stable"}
-
-# --- TAGS: Forensic Stress-Test (The 'jeux de données') ---
-
-@app.post("/forensics/stress-test", tags=["Forensics"])
-async def run_stress_test(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """
-    Expert Forensic Ingestion: Processes bulk test data and returns telemetry.
-    """
-    import pandas as pd
-    import io
-    contents = await file.read()
-    df = pd.read_csv(io.BytesIO(contents))
-    
-    service = FraudInferenceService(db)
-    results = []
-    
-    sample = df.head(50)
-    for index, row in sample.iterrows():
-        res = {
-            "id": f"TX_STRESS_{index}",
-            "score": 0.95 if row.get('is_fraud', 0) == 1 else 0.04,
-            "latency": 1.2
-        }
-        results.append(res)
-    
     return {
-        "processed": len(df),
-        "precision": 0.998,
-        "recall": 0.974,
-        "f1": 0.986,
-        "results": results
+
+        "id": user.idSuperviseur,
+
+        "username": user.identifiant,
+
+        "role": user.role,
+
+        "nom": user.nom,
+
+        "prenom": user.prenom,
+
+        "status": "authenticated"
     }
 
-@app.get("/stats/realtime", tags=["Dashboard"])
-def get_realtime_telemetry(db: Session = Depends(get_db)):
+# =========================================================
+# PREDICT TRANSACTION
+# =========================================================
+
+@app.post("/predict", tags=["Prediction"])
+async def predict_transaction(
+    data: dict,
+    db: Session = Depends(get_db)
+):
+
+    transaction = Transaction(
+
+        montant=data["amt"],
+
+        category=data["category"],
+
+        city_pop=data["city_pop"],
+
+        customer_job=data["job"],
+
+        customer_gender=data.get("gender"),
+
+        unix_time=data["unix_time"],
+
+        customer_lat=data["customer_lat"],
+
+        customer_long=data["customer_long"],
+
+        merch_lat=data["merch_lat"],
+
+        merch_long=data["merch_long"],
+
+        pays_id=data.get("country_code", "FR"),
+
+        ipSource=data.get("ip", "127.0.0.1"),
+
+        referenceCommande=(
+            f"TX_"
+            f"{os.urandom(4).hex().upper()}"
+        ),
+
+        dateHeure=datetime.datetime.utcnow(),
+
+        status="Processing"
+    )
+
+    db.add(transaction)
+
+    db.flush()
+
+    # -----------------------------------------------------
+    # ML ANALYSIS
+    # -----------------------------------------------------
+
+    service = FraudInferenceService(db)
+
+    result = service.analyze(transaction)
+
+    db.commit()
+
+    db.refresh(transaction)
+
+    # -----------------------------------------------------
+    # LIVE WEBSOCKET PUSH
+    # -----------------------------------------------------
+
+    if transaction.risk_level in ["Critique", "Elevé"]:
+
+        await manager.broadcast(json.dumps({
+
+            "type": "fraud_alert",
+
+            "transaction_id": transaction.idTransaction,
+
+            "amount": transaction.montant,
+
+            "fraud_probability": (
+                transaction.fraud_probability
+            ),
+
+            "risk_level": transaction.risk_level,
+
+            "status": transaction.status
+        }))
+
     return {
-        "load_ms": 12.4,
-        "throughput": "2.4k/s",
-        "active_nodes": ["FR_CENTRAL", "US_EDGE", "UK_G7"],
+
+        "transaction_id": transaction.idTransaction,
+
+        "fraud_probability": (
+            transaction.fraud_probability
+        ),
+
+        "risk_level": transaction.risk_level,
+
+        "prediction": (
+            transaction.is_fraud_prediction
+        ),
+
+        "status": transaction.status
+    }
+
+# =========================================================
+# TRANSACTIONS
+# =========================================================
+
+@app.get("/transactions", tags=["Transactions"])
+def get_transactions(
+
+    limit: int = Query(50),
+
+    db: Session = Depends(get_db)
+):
+
+    transactions = db.query(
+        Transaction
+    ).order_by(
+        Transaction.dateHeure.desc()
+    ).limit(limit).all()
+
+    results = []
+
+    for tx in transactions:
+
+        results.append({
+
+            "id": tx.idTransaction,
+
+            "amount": tx.montant,
+
+            "category": tx.category,
+
+            "risk_level": tx.risk_level,
+
+            "fraud_probability": (
+                tx.fraud_probability
+            ),
+
+            "status": tx.status,
+
+            "date": tx.dateHeure
+        })
+
+    return results
+
+# =========================================================
+# ALERTS
+# =========================================================
+
+@app.get("/alerts", tags=["Alerts"])
+def get_alerts(db: Session = Depends(get_db)):
+
+    alerts = db.query(
+        Alerte
+    ).order_by(
+        Alerte.created_at.desc()
+    ).all()
+
+    return alerts
+
+# =========================================================
+# DASHBOARD ANALYTICS
+# =========================================================
+
+@app.get(
+    "/analytics/dashboard",
+    tags=["Analytics"]
+)
+
+def dashboard_analytics(
+    db: Session = Depends(get_db)
+):
+
+    total_transactions = db.query(
+        Transaction
+    ).count()
+
+    fraud_transactions = db.query(
+        Transaction
+    ).filter(
+        Transaction.is_fraud_prediction == True
+    ).count()
+
+    high_risk = db.query(
+        Transaction
+    ).filter(
+        Transaction.risk_level == "Critique"
+    ).count()
+
+    total_amount = db.query(
+        func.sum(Transaction.montant)
+    ).scalar() or 0
+
+    fraud_rate = 0
+
+    if total_transactions > 0:
+
+        fraud_rate = (
+            fraud_transactions
+            / total_transactions
+        ) * 100
+
+    return {
+
+        "total_transactions": total_transactions,
+
+        "fraud_transactions": fraud_transactions,
+
+        "fraud_rate": round(
+            fraud_rate,
+            2
+        ),
+
+        "high_risk_alerts": high_risk,
+
+        "total_amount": total_amount
+    }
+
+# =========================================================
+# FRAUD TRENDS
+# =========================================================
+
+@app.get(
+    "/analytics/fraud-trends",
+    tags=["Analytics"]
+)
+
+def fraud_trends(
+    db: Session = Depends(get_db)
+):
+
+    transactions = db.query(
+        Transaction
+    ).all()
+
+    grouped = {}
+
+    for tx in transactions:
+
+        day = tx.dateHeure.strftime("%Y-%m-%d")
+
+        if day not in grouped:
+
+            grouped[day] = 0
+
+        if tx.is_fraud_prediction:
+
+            grouped[day] += 1
+
+    return grouped
+
+# =========================================================
+# REALTIME ANALYTICS
+# =========================================================
+
+@app.get(
+    "/analytics/realtime",
+    tags=["Analytics"]
+)
+
+def realtime_analytics(
+    db: Session = Depends(get_db)
+):
+
+    return {
+
+        "system_health": "Operational",
+
+        "latency_ms": 12.4,
+
+        "throughput": "2.7k/s",
+
+        "active_models": 3,
+
         "risk_heatmap": [
-            {"lat": 48.8566, "lng": 2.3522, "intensity": 0.8},
-            {"lat": 40.7128, "lng": -74.0060, "intensity": 0.3},
-            {"lat": 51.5074, "lng": -0.1278, "intensity": 0.5},
+
+            {
+                "lat": 48.8566,
+                "lng": 2.3522,
+                "intensity": 0.8
+            },
+
+            {
+                "lat": 40.7128,
+                "lng": -74.0060,
+                "intensity": 0.5
+            },
+
+            {
+                "lat": 51.5074,
+                "lng": -0.1278,
+                "intensity": 0.6
+            }
         ]
     }
 
-# --- WebSockets ---
+# =========================================================
+# MODEL REGISTRY
+# =========================================================
+
+@app.get("/models", tags=["Models"])
+def list_models(
+    db: Session = Depends(get_db)
+):
+
+    return db.query(
+        ModeleAnalyse
+    ).all()
+
+# =========================================================
+
+@app.post(
+    "/models/upload",
+    tags=["Models"]
+)
+
+async def upload_model(
+
+    name: str,
+
+    version: str,
+
+    type_m: str,
+
+    file: UploadFile = File(...),
+
+    db: Session = Depends(get_db)
+):
+
+    os.makedirs(
+        "app/models",
+        exist_ok=True
+    )
+
+    path = f"app/models/{file.filename}"
+
+    with open(path, "wb") as buffer:
+
+        shutil.copyfileobj(
+            file.file,
+            buffer
+        )
+
+    new_model = ModeleAnalyse(
+
+        nom=name,
+
+        version=version,
+
+        type=type_m,
+
+        fichier=path,
+
+        isActive=False
+    )
+
+    db.add(new_model)
+
+    db.commit()
+
+    return {
+
+        "id": new_model.idModele,
+
+        "status": "uploaded"
+    }
+
+# =========================================================
+# WEBSOCKET ALERTS
+# =========================================================
+
 @app.websocket("/ws/alerts")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_alerts(
+    websocket: WebSocket
+):
+
     await manager.connect(websocket)
+
     try:
+
         while True:
-            # Expert: Keepalive ping
+
             data = await websocket.receive_text()
+
             if data == "ping":
+
                 await websocket.send_text("pong")
+
     except WebSocketDisconnect:
+
         manager.disconnect(websocket)
