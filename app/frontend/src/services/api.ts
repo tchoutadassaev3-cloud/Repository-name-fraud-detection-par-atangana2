@@ -1,40 +1,35 @@
 import axios from 'axios';
+import { API_BASE_URL } from '../utils/constants';
 
-// const API_BASE_URL = 'http://localhost:8000';
-// const API_BASE_URL = 'https://repository-name-fraud-detection-par.onrender.com';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL;
-
-export const api = axios.create({
-    baseURL: API_BASE_URL,
-    headers: {
-        'Content-Type': 'application/json',
-    },
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  timeout: 30000,
 });
 
-export const authService = {
-    login: (credentials: any) => api.post('/auth/login', credentials),
-};
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('afg_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-export const modelService = {
-    list: () => api.get('/models'),
-    activate: (id: string) => api.post(`/models/${id}/activate`),
-    upload: (data: FormData) => api.post('/models/upload', data, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-    }),
-};
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('afg_token');
+      localStorage.removeItem('afg_user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
 
-export const transactionService = {
-    simulate: (data: any) => api.post('/transactions/simulate', data),
-    stressTest: (file: File) => {
-        const formData = new FormData();
-        formData.append('file', file);
-        return api.post('/forensics/stress-test', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' }
-        });
-    },
-};
-
-export const telemetryService = {
-    getRealtime: () => api.get('/stats/realtime'),
-};
+export default api;

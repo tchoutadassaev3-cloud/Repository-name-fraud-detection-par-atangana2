@@ -1,7 +1,25 @@
-from sqlalchemy import Column, String, Float, DateTime, Boolean, ForeignKey, Integer, Text
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy import (
+    Column,
+    String,
+    Float,
+    DateTime,
+    Boolean,
+    ForeignKey,
+    Integer,
+    Text
+)
+
+from sqlalchemy.orm import (
+    relationship,
+    declarative_base
+)
+
 import datetime
 import uuid
+
+# =========================================================
+# BASE
+# =========================================================
 
 Base = declarative_base()
 
@@ -13,28 +31,39 @@ def generate_uuid():
     return str(uuid.uuid4())
 
 # =========================================================
-# SUPPORTING ENTITIES
+# PAYS
 # =========================================================
 
 class Pays(Base):
 
     __tablename__ = "pays"
 
-    codePays = Column(String(3), primary_key=True)
+    codePays = Column(
+        String(3),
+        primary_key=True
+    )
 
     namePays = Column(String)
 
     zoneGeo = Column(String)
 
-    isActive = Column(Boolean, default=True)
+    isActive = Column(
+        Boolean,
+        default=True
+    )
 
+# =========================================================
+# SOURCE TRANSACTION
 # =========================================================
 
 class SourceTransaction(Base):
 
     __tablename__ = "sources_transaction"
 
-    code = Column(String, primary_key=True)
+    code = Column(
+        String,
+        primary_key=True
+    )
 
     libelle = Column(String)
 
@@ -51,7 +80,7 @@ class SourceTransaction(Base):
     )
 
 # =========================================================
-# USERS / ADMINISTRATION
+# USAGER
 # =========================================================
 
 class Usager(Base):
@@ -68,7 +97,10 @@ class Usager(Base):
 
     prenom = Column(String)
 
-    email = Column(String, unique=True)
+    email = Column(
+        String,
+        unique=True
+    )
 
     telephone = Column(String)
 
@@ -79,7 +111,10 @@ class Usager(Base):
         default=datetime.datetime.utcnow
     )
 
-    is_active = Column(Boolean, default=True)
+    is_active = Column(
+        Boolean,
+        default=True
+    )
 
     pays_id = Column(
         String,
@@ -92,6 +127,8 @@ class Usager(Base):
     )
 
 # =========================================================
+# SUPERVISEUR
+# =========================================================
 
 class SuperviseurSysteme(Base):
 
@@ -103,7 +140,10 @@ class SuperviseurSysteme(Base):
         default=generate_uuid
     )
 
-    identifiant = Column(String, unique=True)
+    identifiant = Column(
+        String,
+        unique=True
+    )
 
     motDePasse = Column(String)
 
@@ -115,9 +155,15 @@ class SuperviseurSysteme(Base):
 
     prenom = Column(String)
 
-    isActive = Column(Boolean, default=True)
+    isActive = Column(
+        Boolean,
+        default=True
+    )
 
-    lastConnection = Column(DateTime, nullable=True)
+    lastConnection = Column(
+        DateTime,
+        nullable=True
+    )
 
     created_at = Column(
         DateTime,
@@ -129,25 +175,45 @@ class SuperviseurSysteme(Base):
         onupdate=datetime.datetime.utcnow
     )
 
-    # ADMIN FIELDS
+    niveauAcces = Column(
+        Integer,
+        nullable=True
+    )
 
-    niveauAcces = Column(Integer, nullable=True)
+    peutGererModele = Column(
+        Boolean,
+        nullable=True
+    )
 
-    peutGererModele = Column(Boolean, nullable=True)
+    peutGererUtilisateurs = Column(
+        Boolean,
+        nullable=True
+    )
 
-    peutGererUtilisateurs = Column(Boolean, nullable=True)
+    peutConsulterLogs = Column(
+        Boolean,
+        nullable=True
+    )
 
-    peutConsulterLogs = Column(Boolean, nullable=True)
+    specialite = Column(
+        String,
+        nullable=True
+    )
 
-    # ANALYST FIELDS
+    quotaAlertesMax = Column(
+        Integer,
+        nullable=True
+    )
 
-    specialite = Column(String, nullable=True)
+    alertesTraitees = Column(
+        Integer,
+        default=0
+    )
 
-    quotaAlertesMax = Column(Integer, nullable=True)
-
-    alertesTraitees = Column(Integer, default=0)
-
-    tauxResolution = Column(Float, default=0.0)
+    tauxResolution = Column(
+        Float,
+        default=0.0
+    )
 
     alertes = relationship(
         "Alerte",
@@ -155,7 +221,7 @@ class SuperviseurSysteme(Base):
     )
 
 # =========================================================
-# CARDS
+# CARTE
 # =========================================================
 
 class Carte(Base):
@@ -168,7 +234,10 @@ class Carte(Base):
         default=generate_uuid
     )
 
-    numero = Column(String, unique=True)
+    numero = Column(
+        String,
+        unique=True
+    )
 
     expiredAt = Column(DateTime)
 
@@ -176,11 +245,20 @@ class Carte(Base):
 
     cryptogramme = Column(String)
 
-    isActive = Column(Boolean, default=True)
+    isActive = Column(
+        Boolean,
+        default=True
+    )
 
-    blockedAt = Column(DateTime, nullable=True)
+    blockedAt = Column(
+        DateTime,
+        nullable=True
+    )
 
-    blockReason = Column(String, nullable=True)
+    blockReason = Column(
+        String,
+        nullable=True
+    )
 
     usager_id = Column(
         String,
@@ -198,92 +276,128 @@ class Carte(Base):
     )
 
 # =========================================================
-# TRANSACTIONS
+# TRANSACTION
 # =========================================================
 
 class Transaction(Base):
+
     __tablename__ = "transactions"
 
-    idTransaction = Column(String, primary_key=True, default=generate_uuid)
+    idTransaction = Column(
+        String,
+        primary_key=True,
+        default=generate_uuid
+    )
 
-    # --- Core transaction ---
+    # -----------------------------------------------------
+    # CORE TRANSACTION
+    # -----------------------------------------------------
+
     montant = Column(Float)
-    devise = Column(String, default="EUR")
-    dateHeure = Column(DateTime, default=datetime.datetime.utcnow)
+
+    devise = Column(
+        String,
+        default="XAF"
+    )
+
+    dateHeure = Column(
+        DateTime,
+        default=datetime.datetime.utcnow
+    )
 
     referenceCommande = Column(String)
+
     status = Column(String)
 
     ipSource = Column(String)
 
-    # --- Fraud ML Features ---
+    # -----------------------------------------------------
+    # CUSTOMER / MERCHANT
+    # -----------------------------------------------------
+
     merchant = Column(String)
+
     category = Column(String)
 
+    city = Column(String)
+
+    state = Column(String)
+
+    zip_code = Column(String)
+
+    card_num = Column(String)
+
     city_pop = Column(Integer)
-    job = Column(String)
+
+    customer_job = Column(String)
+
+    customer_gender = Column(String)
+
+    # -----------------------------------------------------
+    # TIME FEATURES
+    # -----------------------------------------------------
 
     unix_time = Column(Float)
 
-    merch_lat = Column(Float)
-    merch_long = Column(Float)
+    transaction_hour = Column(Integer)
+
+    transaction_day = Column(Integer)
+
+    # -----------------------------------------------------
+    # LOCATION FEATURES
+    # -----------------------------------------------------
 
     customer_lat = Column(Float)
+
     customer_long = Column(Float)
 
-    # --- Relations ---
-    pays_id = Column(String, ForeignKey("pays.codePays"))
+    merchant_lat = Column(Float)
 
-    carte_id = Column(String, ForeignKey("cartes.idCarte"))
+    merchant_long = Column(Float)
 
-    source_id = Column(String, ForeignKey("sources_transaction.code"))
+    distance_km = Column(Float)
 
-    carte = relationship("Carte", back_populates="transactions")
-
-    resultat = relationship(
-        "ResultatAnalyse",
-        uselist=False,
-        back_populates="transaction"
-    )
+    country_code = Column(String)
 
     # -----------------------------------------------------
-    # MACHINE LEARNING FEATURES
+    # DEVICE FEATURES
     # -----------------------------------------------------
 
-    category = Column(String, nullable=True)
+    device_type = Column(String)
 
-    city_pop = Column(Integer, nullable=True)
-
-    customer_job = Column(String, nullable=True)
-
-    customer_gender = Column(String, nullable=True)
-
-    unix_time = Column(Float, nullable=True)
-
-    customer_lat = Column(Float, nullable=True)
-
-    customer_long = Column(Float, nullable=True)
-
-    merchant_lat = Column(Float, nullable=True)
-
-    merchant_long = Column(Float, nullable=True)
+    browser = Column(String)
 
     # -----------------------------------------------------
     # ML RESULTS
     # -----------------------------------------------------
 
-    fraud_probability = Column(Float, nullable=True)
+    fraud_probability = Column(Float)
 
     is_fraud_prediction = Column(
         Boolean,
         default=False
     )
 
-    risk_level = Column(String, nullable=True)
+    risk_level = Column(String)
 
     # -----------------------------------------------------
-    # RELATIONSHIPS
+    # RELATIONS
     # -----------------------------------------------------
+
+    pays_id = Column(
+        String,
+        ForeignKey("pays.codePays")
+    )
+
+    carte_id = Column(
+        String,
+        ForeignKey("cartes.idCarte")
+    )
+
+    source_id = Column(
+        String,
+        ForeignKey("sources_transaction.code")
+    )
 
     carte = relationship(
         "Carte",
@@ -297,7 +411,7 @@ class Transaction(Base):
     )
 
 # =========================================================
-# ANALYSIS MODELS
+# MODEL ANALYSIS
 # =========================================================
 
 class ModeleAnalyse(Base):
@@ -318,7 +432,10 @@ class ModeleAnalyse(Base):
 
     fichier = Column(String)
 
-    isActive = Column(Boolean, default=True)
+    isActive = Column(
+        Boolean,
+        default=True
+    )
 
     created_at = Column(
         DateTime,
@@ -332,64 +449,28 @@ class ModeleAnalyse(Base):
 
     type = Column(String)
 
-    priorite = Column(Integer, nullable=True)
+    priorite = Column(Integer)
 
-    seuilDeclenchementSecondaire = Column(
-        Float,
-        nullable=True
-    )
+    seuilDeclenchementSecondaire = Column(Float)
 
-    declenchementCondition = Column(
-        String,
-        nullable=True
-    )
+    declenchementCondition = Column(String)
 
-    executeEnParallel = Column(
-        Boolean,
-        nullable=True
-    )
+    executeEnParallel = Column(Boolean)
 
     resultats = relationship(
         "ResultatAnalyse",
         back_populates="modele"
     )
+    
+    accuracy = Column(Float)
+    precision = Column(Float)
+    recall = Column(Float)
+    f1_score = Column(Float)
+    roc_auc = Column(Float)
+    auprc = Column(Float)
 
 # =========================================================
-# RULES
-# =========================================================
-
-class RegleAnalyse(Base):
-
-    __tablename__ = "regles_analyse"
-
-    idRelge = Column(
-        String,
-        primary_key=True,
-        default=generate_uuid
-    )
-
-    nom = Column(String)
-
-    description = Column(Text)
-
-    condition = Column(String)
-
-    poids = Column(Float)
-
-    isActive = Column(Boolean, default=True)
-
-    created_at = Column(
-        DateTime,
-        default=datetime.datetime.utcnow
-    )
-
-    updated_at = Column(
-        DateTime,
-        onupdate=datetime.datetime.utcnow
-    )
-
-# =========================================================
-# ANALYSIS RESULTS
+# RESULTAT ANALYSE
 # =========================================================
 
 class ResultatAnalyse(Base):
@@ -442,7 +523,7 @@ class ResultatAnalyse(Base):
     )
 
 # =========================================================
-# ALERTS
+# ALERTES
 # =========================================================
 
 class Alerte(Base):
@@ -499,4 +580,4 @@ class Alerte(Base):
         "SuperviseurSysteme",
         back_populates="alertes"
     )
-
+    

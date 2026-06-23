@@ -99,8 +99,8 @@ class MasterScienceLab:
         # -------------------------------------------------
 
         df['dist'] = np.sqrt(
-            (df['lat'] - df['merch_lat'])**2 +
-            (df['long'] - df['merch_long'])**2
+            (df['lat'] - df['merchant_lat'])**2 +
+            (df['long'] - df['merchant_long'])**2
         )
 
         # -------------------------------------------------

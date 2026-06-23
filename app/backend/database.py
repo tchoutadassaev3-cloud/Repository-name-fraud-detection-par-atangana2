@@ -1,13 +1,14 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
 from .models import Base
 
 # =========================================================
 # DATABASE CONFIGURATION
 # =========================================================
 
-# SQLite for Proof of Concept
-# Later upgrade:
+# SQLite local database
+# Later:
 # PostgreSQL / MySQL
 
 DATABASE_URL = "sqlite:///./fraud_system.db"
@@ -17,20 +18,28 @@ DATABASE_URL = "sqlite:///./fraud_system.db"
 # =========================================================
 
 engine = create_engine(
+
     DATABASE_URL,
+
     connect_args={
         "check_same_thread": False
     },
+
+    pool_pre_ping=True,
+
     echo=False
 )
 
 # =========================================================
-# SESSION
+# SESSION FACTORY
 # =========================================================
 
 SessionLocal = sessionmaker(
+
     autocommit=False,
+
     autoflush=False,
+
     bind=engine
 )
 
@@ -59,4 +68,3 @@ def get_db():
     finally:
 
         db.close()
-

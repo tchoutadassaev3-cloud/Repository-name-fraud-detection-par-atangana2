@@ -1,58 +1,67 @@
-import React from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { useTelemetryStore } from './store/useTelemetryStore';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import MainLayout from './components/layouts/MainLayout';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import Transactions from './pages/Transactions';
+import FraudAnalysis from './pages/FraudAnalysis';
+import AlertsCenter from './pages/AlertsCenter';
+import ModelsManagement from './pages/ModelsManagement';
+import RealtimeMonitoring from './pages/RealtimeMonitoring';
+import Settings from './pages/Settings';
+import LoadingSpinner from './components/common/LoadingSpinner';
 
-// Views [Gate 0 to Route 2]
-import LoginView from './views/LoginView';
-import ClientView from './views/ClientView';
-import SupervisorView from './views/SupervisorView';
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
 
-// Industrial Guards
-const ProtectedRoute = ({ children, role }: { children: React.ReactNode, role: string }) => {
-  const user = useTelemetryStore(state => state.user);
+  if (isLoading) {
+    return <LoadingSpinner fullScreen />;
+  }
 
-  if (!user) return <Navigate to="/login" />;
-
-  // Role Authorization Check
-  if (role !== 'any' && user.role !== role) {
-    return <Navigate to={user.role === 'admin' ? '/supervisor' : '/client'} />;
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;
-};
+}
 
-export default function App() {
-  const user = useTelemetryStore(state => state.user);
+function AppRoutes() {
+  const { isAuthenticated } = useAuth();
 
   return (
-    <div className="NOC-Terminal bg-bg-deep min-h-screen selection:bg-accent-cyan/30 selection:text-white">
-      <Routes>
-        {/* Gate 0: Unified Auth Portal */}
-        <Route path="/login" element={user ? <Navigate to={user.role === 'admin' ? '/supervisor' : '/client'} /> : <LoginView />} />
+    <Routes>
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />}
+      />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="transactions" element={<Transactions />} />
+        <Route path="fraud-analysis" element={<FraudAnalysis />} />
+        <Route path="alerts" element={<AlertsCenter />} />
+        <Route path="models" element={<ModelsManagement />} />
+        <Route path="realtime" element={<RealtimeMonitoring />} />
+        <Route path="settings" element={<Settings />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+}
 
-        {/* Route 1: Client Portal [Nexus Overview + 3D Simulator] */}
-        <Route
-          path="/client"
-          element={
-            <ProtectedRoute role="client">
-              <ClientView />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Route 2: Supervisor NOC [Mission Control + MLOps] */}
-        <Route
-          path="/supervisor"
-          element={
-            <ProtectedRoute role="admin">
-              <SupervisorView />
-            </ProtectedRoute>
-          }
-        />
-
-        {/* Default Forwarding Node */}
-        <Route path="*" element={<Navigate to="/login" />} />
-      </Routes>
-    </div>
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }

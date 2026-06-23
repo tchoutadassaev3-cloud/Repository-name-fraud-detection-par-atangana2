@@ -17,6 +17,7 @@ from .models import (
 
 MODEL_STORAGE = "app/models/"
 
+
 # =========================================================
 # FRAUD INFERENCE SERVICE
 # =========================================================
@@ -41,19 +42,6 @@ class FraudInferenceService:
     # =====================================================
 
     def _load_active_model(self):
-
-        model_meta = self.db.query(
-            ModeleAnalyse
-        ).filter(
-            ModeleAnalyse.isActive == True,
-            ModeleAnalyse.type == "Principal"
-        ).first()
-
-        if not model_meta:
-
-            print("[!] No active principal model found.")
-
-            return False
 
         try:
 
@@ -91,8 +79,35 @@ class FraudInferenceService:
                     "nexus_meta.joblib"
                 )
             )
+            
+            print(
+                  "NEXUS FEATURES =",
+                  self.nexus.n_features_in_
+            )
+            
+            print(
+                "XGB FEATURES =",
+                self.xgb.n_features_in_
+            )
 
-            self.model_info = model_meta
+            print(
+                "BRF FEATURES =",
+                self.brf.n_features_in_
+            )
+
+
+        # ============================================
+        # Fake model metadata for reporting
+        # ============================================
+        
+            self.model_info = type(
+                "ModelInfo",
+                (),
+                {
+                    "nom": "NEXUS AI STACK",
+                    "idModele": "LOCAL_MODEL"
+                }
+            )()
 
             print("[+] ML artifacts loaded successfully")
 
@@ -170,15 +185,15 @@ class FraudInferenceService:
     def determine_risk_level(self, score):
 
         if score >= 0.90:
-            return "Critique"
+            return "Critical"
 
         elif score >= 0.70:
-            return "Elevé"
+            return "High"
 
         elif score >= 0.40:
-            return "Moyen"
+            return "Medium"
 
-        return "Faible"
+        return "Low"
 
     # =====================================================
     # ANALYZE TRANSACTION
@@ -245,6 +260,67 @@ class FraudInferenceService:
         fraud_score = self.nexus.predict_proba(
             meta_X
         )[:, 1][0]
+        
+        print("=" * 50)
+        print("AMOUNT :", transaction.montant)
+        print("CATEGORY :", transaction.category)
+        print("P1 :", p1[0])
+        print("P2 :", p2[0])
+        print("FRAUD SCORE :", fraud_score)
+        print("=" * 50)
+        
+        print("=" * 50)
+        print("AMOUNT :", transaction.montant)
+        print("CATEGORY :", transaction.category)
+        print("P1 :", p1[0])
+        print("P2 :", p2[0])
+        print("META :", meta_X)
+        print("=" * 50)
+        
+        fraud_score = self.nexus.predict_proba(
+            meta_X
+        )[:,1][0]
+        
+        # =====================================
+        # BUSINESS RULES - CAMEROUN
+        # =====================================
+        
+        amount_fcfa = transaction.montant * 650
+        
+        # Très gros montant
+        if amount_fcfa >= 1000000:
+            
+            fraud_score = max(
+                fraud_score,
+                0.95
+            )
+            
+        # Gros montant
+        elif amount_fcfa >= 250000:
+            
+            fraud_score = max(
+              fraud_score,
+              0.60
+            )  
+        
+        # Site suspect
+        if transaction.merchant == "shady_site_05":
+            
+            fraud_score = max(
+                fraud_score,
+                0.85
+            )
+            
+        # Achat luxe
+        if transaction.category == "luxury_item":
+            
+            fraud_score = max(
+                fraud_score,
+                0.70
+                
+            )
+                    
+        print("FINAL SCORE :", fraud_score)
 
         # -------------------------------------------------
         # Fraud Decision
@@ -268,9 +344,9 @@ class FraudInferenceService:
 
             transaction.status = "Refusé"
 
-        elif fraud_score >= 0.70:
+        elif fraud_score >= 0.60:
 
-            transaction.status = "En Alerte"
+            transaction.status = "En Attente"
 
         else:
 
@@ -289,6 +365,37 @@ class FraudInferenceService:
         )
 
         transaction.risk_level = risk_level
+
+        # -------------------------------------------------
+        # Additional calculated fields
+        # -------------------------------------------------
+        
+        current_time = transaction.dateHeure
+        
+        hour = current_time.hour
+        
+        day = current_time.weekday()
+
+        transaction.distance_km = round(
+            float(
+                np.sqrt(
+                    (
+                        transaction.customer_lat -
+                        transaction.merchant_lat
+                    ) ** 2
+                    +
+                    (
+                        transaction.customer_long -
+                        transaction.merchant_long
+                    ) ** 2
+                ) * 111
+            ),
+            2
+        )
+
+        transaction.transaction_hour = hour
+
+        transaction.transaction_day = day
 
         # -------------------------------------------------
         # End timer
@@ -370,11 +477,93 @@ class FraudInferenceService:
 
     def _fallback_rule_analysis(self, transaction):
 
-        score = 0.9 if transaction.montant > 5000 else 0.1
+        # -------------------------------------------------
+        # Distance calculation
+        # -------------------------------------------------
+
+        dist = np.sqrt(
+            (
+                transaction.customer_lat -
+                transaction.merchant_lat
+            ) ** 2
+            +
+            (
+                transaction.customer_long -
+                transaction.merchant_long
+            ) ** 2
+        )
+
+        # -------------------------------------------------
+        # Simple fallback fraud logic
+        # -------------------------------------------------
+
+        if (
+            transaction.montant > 300000
+            or dist > 20
+        ):
+
+            score = 0.95
+
+        elif transaction.montant > 100000:
+
+            score = 0.75
+
+        else:
+
+            score = 0.10
+
+        # -------------------------------------------------
+        # Risk level
+        # -------------------------------------------------
 
         risk_level = self.determine_risk_level(
             score
         )
+
+        # -------------------------------------------------
+        # Transaction status
+        # -------------------------------------------------
+
+        transaction.status = (
+            "Refusé"
+            if score >= 0.90
+            else "Accepté"
+        )
+
+        # -------------------------------------------------
+        # Save predictions
+        # -------------------------------------------------
+
+        transaction.fraud_probability = float(
+            score
+        )
+
+        transaction.is_fraud_prediction = (
+            score >= 0.5
+        )
+
+        transaction.risk_level = risk_level
+
+        # -------------------------------------------------
+        # Extra frontend fields
+        # -------------------------------------------------
+
+        transaction.distance_km = round(
+            float(dist * 111),
+            2
+        )
+
+        transaction.transaction_hour = (
+            transaction.dateHeure.hour
+        )
+
+        transaction.transaction_day = (
+            transaction.dateHeure.weekday()
+        )
+
+        # =================================================
+        # CREATE RESULT
+        # =================================================
 
         resultat = ResultatAnalyse(
 
@@ -394,19 +583,4 @@ class FraudInferenceService:
             transaction_id=transaction.idTransaction
         )
 
-        transaction.fraud_probability = score
-
-        transaction.is_fraud_prediction = (
-            score >= 0.5
-        )
-
-        transaction.risk_level = risk_level
-
-        transaction.status = (
-            "Refusé"
-            if score >= 0.9
-            else "Accepté"
-        )
-
         return resultat
-

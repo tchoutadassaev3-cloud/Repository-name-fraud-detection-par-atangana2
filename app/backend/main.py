@@ -12,15 +12,13 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 
 from sqlalchemy.orm import Session
-
 from sqlalchemy import func
-
-from typing import Optional
 
 import json
 import os
 import shutil
 import datetime
+import uuid
 
 from .database import (
     get_db,
@@ -52,7 +50,7 @@ app = FastAPI(
         "and transaction monitoring platform"
     ),
 
-    version="2.0.0"
+    version="3.0.0"
 )
 
 # =========================================================
@@ -90,13 +88,27 @@ class ConnectionManager:
 
     def disconnect(self, websocket: WebSocket):
 
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: str):
 
+        disconnected = []
+
         for connection in self.active_connections:
 
-            await connection.send_text(message)
+            try:
+
+                await connection.send_text(message)
+
+            except Exception:
+
+                disconnected.append(connection)
+
+        for ws in disconnected:
+
+            self.disconnect(ws)
 
 manager = ConnectionManager()
 
@@ -143,7 +155,10 @@ def startup():
 # =========================================================
 
 @app.post("/auth/login", tags=["Authentication"])
-def login(data: dict, db: Session = Depends(get_db)):
+def login(
+    data: dict,
+    db: Session = Depends(get_db)
+):
 
     user = db.query(
         SuperviseurSysteme
@@ -190,71 +205,300 @@ async def predict_transaction(
     db: Session = Depends(get_db)
 ):
 
-    transaction = Transaction(
+    print("=" * 50)
+    print(data)
+    print("=" * 50)
+    
+    
+    try:
 
-        montant=data["amt"],
+        # =================================================
+        # DISTANCE CALCULATION
+        # =================================================
+        
+        customer_lat = (
+            data.get("customer_lat")
+            or data.get("lat")
+        )
+        
+        customer_long = (
+            data.get("customer_long")
+            or data.get("long")
+        )
 
-        category=data["category"],
+        merchant_lat = (
+            data.get("merchant_lat")
+            or data.get("merch_lat")
+        )
+        
+        merchant_long = (
+            data.get("merchant_long")
+            or data.get("merch_long")
+        )
+        
+        if customer_lat is None:
+            customer_lat = 0.0
+        
+        if customer_long is None:
+            customer_long = 0.0
+        
+        if merchant_lat is None:
+            merchant_lat = customer_lat
+        
+        if merchant_long is None:
+            merchant_long = customer_long
+      
+        distance_km = (
+            (
+                (customer_lat - merchant_lat) ** 2
+                +
+                (customer_long - merchant_long) ** 2
+            ) ** 0.5
+        ) * 111
 
-        city_pop=data["city_pop"],
+        # =================================================
+        # TRANSACTION CREATION
+        # =================================================
 
-        customer_job=data["job"],
+        transaction = Transaction(
 
-        customer_gender=data.get("gender"),
+            # ---------------------------------------------
+            # Core
+            # ---------------------------------------------
 
-        unix_time=data["unix_time"],
+            idTransaction=str(uuid.uuid4()),
 
-        customer_lat=data["customer_lat"],
+            montant=data["amt"],
 
-        customer_long=data["customer_long"],
+            devise=data.get("currency", "XAF"),
 
-        merch_lat=data["merch_lat"],
+            dateHeure=datetime.datetime.utcnow(),
 
-        merch_long=data["merch_long"],
+            referenceCommande=(
+                f"TX_"
+                f"{os.urandom(4).hex().upper()}"
+            ),
 
-        pays_id=data.get("country_code", "FR"),
+            status="Processing",
 
-        ipSource=data.get("ip", "127.0.0.1"),
+            ipSource=data.get(
+                "ip",
+                "127.0.0.1"
+            ),
 
-        referenceCommande=(
-            f"TX_"
-            f"{os.urandom(4).hex().upper()}"
-        ),
+            # ---------------------------------------------
+            # Merchant / User
+            # ---------------------------------------------
 
-        dateHeure=datetime.datetime.utcnow(),
+            merchant=data.get(
+                "merchant",
+                "Unknown Merchant"
+            ),
 
-        status="Processing"
-    )
+            category=data.get(
+                "category",
+                "unknown"
+            ),
 
-    db.add(transaction)
+            city=data.get(
+                "city",
+                "Unknown"
+            ),
 
-    db.flush()
+            state=data.get(
+                "state",
+                "Unknown"
+            ),
 
-    # -----------------------------------------------------
-    # ML ANALYSIS
-    # -----------------------------------------------------
+            zip_code=data.get(
+                "zip",
+                "00000"
+            ),
 
-    service = FraudInferenceService(db)
+            card_num=(
+                data.get("card_num")
+                or data.get("cc_num")
+                or "0000000000000000"
+            ),
 
-    result = service.analyze(transaction)
+            city_pop=data.get(
+                "city_pop",
+                0
+            ),
 
-    db.commit()
+            customer_job=data.get(
+                "job",
+                "Unknown"
+            ),
 
-    db.refresh(transaction)
+            customer_gender=data.get(
+                "gender",
+                "Unknown"
+            ),
 
-    # -----------------------------------------------------
-    # LIVE WEBSOCKET PUSH
-    # -----------------------------------------------------
+            # ---------------------------------------------
+            # Time Features
+            # ---------------------------------------------
 
-    if transaction.risk_level in ["Critique", "Elevé"]:
+            unix_time=data.get(
+                "unix_time",
+                0
+            ),
 
-        await manager.broadcast(json.dumps({
+            transaction_hour=data.get(
+                "hour",
+                datetime.datetime.utcnow().hour
+            ),
 
-            "type": "fraud_alert",
+            transaction_day=data.get(
+                "day",
+                datetime.datetime.utcnow().weekday()
+            ),
+
+            # ---------------------------------------------
+            # Coordinates
+            # ---------------------------------------------
+            
+            customer_lat=customer_lat,
+
+            customer_long=customer_long,
+
+            merchant_lat=merchant_lat,
+
+            merchant_long=merchant_long,
+            
+
+            distance_km=distance_km,
+
+            # ---------------------------------------------
+            # Extra ML Features
+            # ---------------------------------------------
+
+            country_code=data.get(
+                "country_code",
+                "CM"
+            ),
+
+            device_type=data.get(
+                "device_type",
+                "Desktop"
+            ),
+
+            browser=data.get(
+                "browser",
+                "Chrome"
+            ),
+
+            pays_id=data.get(
+                "country_code",
+                "CM"
+            )
+        )
+
+        db.add(transaction)
+
+        db.flush()
+
+        # =================================================
+        # ML ANALYSIS
+        # =================================================
+
+        service = FraudInferenceService(db)
+
+        result = service.analyze(transaction)
+
+        db.commit()
+
+        db.refresh(transaction)
+        
+        display_amount = round(
+            transaction.montant * 650,
+            0
+        )
+
+        # =================================================
+        # FRONTEND LIVE EVENT
+        # =================================================
+
+        websocket_payload = {
+
+            "type": "transaction_analysis",
 
             "transaction_id": transaction.idTransaction,
 
-            "amount": transaction.montant,
+            "card": (
+                "****"
+                + transaction.card_num[-4:]
+            ),
+
+            "city": transaction.city,
+
+            "merchant": transaction.merchant,
+
+            "amount": display_amount,
+
+            "currency": "FCFA",
+
+            "distance_km": round(
+                transaction.distance_km,
+                2
+            ),
+
+            "risk_level": transaction.risk_level,
+
+            "fraud_probability": (
+                transaction.fraud_probability
+            ),
+
+            "is_fraud": (
+                transaction.is_fraud_prediction
+            ),
+
+            "status": transaction.status,
+
+            "date": str(
+                transaction.dateHeure
+            )
+        }
+
+        await manager.broadcast(
+            json.dumps(websocket_payload)
+        )
+        
+        decision = ""
+        
+        if transaction.status == "Refusé":
+            
+            decision = "Bloquer immédiatement"
+            
+        elif transaction.status == "En Attente":
+            
+            decision = "Vérification manuelle"
+            
+        else:
+            
+            decision = "Approuver la transaction"
+
+        # =================================================
+        # API RESPONSE
+        # =================================================
+
+        return {
+
+            "transaction_id": transaction.idTransaction,
+
+            "merchant": transaction.merchant,
+
+            "city": transaction.city,
+
+            "amount": display_amount,
+
+            "currency": "FCFA",
+
+            "distance_km": round(
+                transaction.distance_km,
+                2
+            ),
 
             "fraud_probability": (
                 transaction.fraud_probability
@@ -262,25 +506,85 @@ async def predict_transaction(
 
             "risk_level": transaction.risk_level,
 
+            "is_fraud": (
+                transaction.is_fraud_prediction
+            ),
+            
+            "decision": decision,
+
             "status": transaction.status
-        }))
+        }
 
-    return {
+    except Exception as e:
 
-        "transaction_id": transaction.idTransaction,
+        db.rollback()
 
-        "fraud_probability": (
-            transaction.fraud_probability
-        ),
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
 
-        "risk_level": transaction.risk_level,
+# =========================================================
+# SIMULATE TRANSACTION
+# =========================================================
 
-        "prediction": (
-            transaction.is_fraud_prediction
-        ),
+@app.post(
+    "/transactions/simulate",
+    tags=["Simulation"]
+)
+async def simulate_transaction(
+    data: dict,
+    db: Session = Depends(get_db)
+):
+    transformed = {
 
-        "status": transaction.status
+        "amt": data.get("amt"),
+
+        "merchant": data.get("merchant"),
+
+        "category": data.get("category"),
+
+        "city_pop": data.get("city_pop"),
+
+        "job": data.get("job"),
+
+        "gender": data.get("gender"),
+
+        "city": data.get("city"),
+
+        "state": data.get("state"),
+
+        "zip": data.get("zip"),
+
+        "card_num": data.get("card_num"),
+
+        "unix_time": data.get("unix_time"),
+
+        "hour": data.get("hour"),
+
+        "day": data.get("day"),
+
+        "customer_lat": data.get("lat"),
+
+        "customer_long": data.get("long"),
+
+        "merchant_lat": data.get("merch_lat"),
+
+        "merchant_long": data.get("merch_long"),
+
+        "country_code": "CM",
+
+        "currency": "XAF",
+
+        "device_type": "Desktop",
+
+        "browser": "Chrome"
     }
+
+    return await predict_transaction(
+        transformed,
+        db
+    )
 
 # =========================================================
 # TRANSACTIONS
@@ -308,29 +612,53 @@ def get_transactions(
 
             "id": tx.idTransaction,
 
-            "amount": tx.montant,
+            "transaction_id": tx.idTransaction,
+
+            "merchant": tx.merchant,
 
             "category": tx.category,
 
-            "risk_level": tx.risk_level,
-
-            "fraud_probability": (
-                tx.fraud_probability
+            "amount": round(
+                float(tx.montant) * 650,
+                0
             ),
+
+            "fraud_score": float(
+                tx.fraud_probability or 0
+            ),
+
+            "risk_level": tx.risk_level,
 
             "status": tx.status,
 
-            "date": tx.dateHeure
+            "date": tx.dateHeure,
+
+            "card_number": tx.card_num,
+
+            "city": tx.city,
+
+            "is_fraud": tx.is_fraud_prediction
         })
 
-    return results
+    return {
+
+        "transactions": results,
+
+        "total": len(results),
+
+        "page": 1,
+
+        "limit": limit
+    }
 
 # =========================================================
 # ALERTS
 # =========================================================
 
 @app.get("/alerts", tags=["Alerts"])
-def get_alerts(db: Session = Depends(get_db)):
+def get_alerts(
+    db: Session = Depends(get_db)
+):
 
     alerts = db.query(
         Alerte
@@ -348,7 +676,6 @@ def get_alerts(db: Session = Depends(get_db)):
     "/analytics/dashboard",
     tags=["Analytics"]
 )
-
 def dashboard_analytics(
     db: Session = Depends(get_db)
 ):
@@ -373,6 +700,25 @@ def dashboard_analytics(
         func.sum(Transaction.montant)
     ).scalar() or 0
 
+    fraud_amount = db.query(
+        func.sum(Transaction.montant)
+    ).filter(
+        Transaction.is_fraud_prediction == True
+    ).scalar() or 0
+
+    accepted_transactions = (
+        total_transactions
+        - fraud_transactions
+    )
+
+    blocked_transactions = fraud_transactions
+
+    recent_alerts = db.query(
+        Transaction
+    ).filter(
+        Transaction.is_fraud_prediction == True
+    ).count()
+
     fraud_rate = 0
 
     if total_transactions > 0:
@@ -386,18 +732,29 @@ def dashboard_analytics(
 
         "total_transactions": total_transactions,
 
-        "fraud_transactions": fraud_transactions,
+        "fraud_alerts": fraud_transactions,
+
+        "high_risk_transactions": high_risk,
+
+        "accepted_transactions": accepted_transactions,
 
         "fraud_rate": round(
             fraud_rate,
             2
         ),
 
-        "high_risk_alerts": high_risk,
+        "total_amount": float(
+            total_amount
+        ),
 
-        "total_amount": total_amount
+        "fraud_amount": float(
+            fraud_amount
+        ),
+
+        "blocked_transactions": blocked_transactions,
+
+        "recent_alerts": recent_alerts
     }
-
 # =========================================================
 # FRAUD TRENDS
 # =========================================================
@@ -406,7 +763,6 @@ def dashboard_analytics(
     "/analytics/fraud-trends",
     tags=["Analytics"]
 )
-
 def fraud_trends(
     db: Session = Depends(get_db)
 ):
@@ -423,13 +779,41 @@ def fraud_trends(
 
         if day not in grouped:
 
-            grouped[day] = 0
+            grouped[day] = {
+                "total": 0,
+                "fraud": 0
+            }
+
+        grouped[day]["total"] += 1
 
         if tx.is_fraud_prediction:
+            grouped[day]["fraud"] += 1
 
-            grouped[day] += 1
+    result = []
 
-    return grouped
+    for day, stats in grouped.items():
+
+        rate = 0
+
+        if stats["total"] > 0:
+
+            rate = (
+                stats["fraud"]
+                / stats["total"]
+            ) * 100
+
+        result.append({
+
+            "date": day,
+
+            "fraud_count": stats["fraud"],
+
+            "total_count": stats["total"],
+
+            "fraud_rate": round(rate, 2)
+        })
+
+    return result
 
 # =========================================================
 # REALTIME ANALYTICS
@@ -439,41 +823,37 @@ def fraud_trends(
     "/analytics/realtime",
     tags=["Analytics"]
 )
-
 def realtime_analytics(
     db: Session = Depends(get_db)
 ):
 
+    today = datetime.datetime.utcnow().date()
+
+    fraud_today = db.query(
+        Transaction
+    ).filter(
+        Transaction.is_fraud_prediction == True
+    ).count()
+
+    active_alerts = db.query(
+        Transaction
+    ).filter(
+        Transaction.risk_level == "Critique"
+    ).count()
+
+    total_transactions = db.query(
+        Transaction
+    ).count()
+
     return {
 
-        "system_health": "Operational",
+        "active_alerts": active_alerts,
 
-        "latency_ms": 12.4,
+        "transactions_per_minute": total_transactions,
 
-        "throughput": "2.7k/s",
+        "fraud_detected_today": fraud_today,
 
-        "active_models": 3,
-
-        "risk_heatmap": [
-
-            {
-                "lat": 48.8566,
-                "lng": 2.3522,
-                "intensity": 0.8
-            },
-
-            {
-                "lat": 40.7128,
-                "lng": -74.0060,
-                "intensity": 0.5
-            },
-
-            {
-                "lat": 51.5074,
-                "lng": -0.1278,
-                "intensity": 0.6
-            }
-        ]
+        "system_status": "Operational"
     }
 
 # =========================================================
@@ -485,9 +865,28 @@ def list_models(
     db: Session = Depends(get_db)
 ):
 
-    return db.query(
+    models = db.query(
         ModeleAnalyse
     ).all()
+
+    return [
+        {
+            "id": m.idModele,
+            "name": m.nom,
+            "version": m.version,
+            "type": m.type,
+            "is_active": m.isActive,
+            "upload_date": m.created_at,
+            "accuracy": m.accuracy,
+            "precision": m.precision,
+            "recall": m.recall,
+            "f1_score": m.f1_score,
+            "roc_auc": m.roc_auc,
+            "auprc": m.auprc,
+            "description": m.description
+        }
+        for m in models
+    ]
 
 # =========================================================
 
@@ -495,7 +894,6 @@ def list_models(
     "/models/upload",
     tags=["Models"]
 )
-
 async def upload_model(
 
     name: str,
@@ -533,7 +931,20 @@ async def upload_model(
 
         fichier=path,
 
-        isActive=False
+        isActive=False,
+        
+        accuracy=0.99,
+        
+        precision=0.71,
+        
+        recall=0.80,
+        
+        f1_score=0.76,
+        
+        roc_auc=0.9958,
+         
+        auprc=0.8349
+        
     )
 
     db.add(new_model)
@@ -566,8 +977,11 @@ async def websocket_alerts(
 
             if data == "ping":
 
-                await websocket.send_text("pong")
+                await websocket.send_text(
+                    "pong"
+                )
 
     except WebSocketDisconnect:
 
         manager.disconnect(websocket)
+        

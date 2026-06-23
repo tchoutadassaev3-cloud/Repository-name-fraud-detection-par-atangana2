@@ -1,95 +1,346 @@
 import requests
-import time
 import random
-import json
+import time
+from datetime import datetime
 
-# API_URL = "http://localhost:8000/transactions/"
+API_URL = "http://127.0.0.1:8000/transactions/simulate"
+#API_URL = "http://127.0.0.1:8000/transactions"
 #API_URL = "https://repository-name-fraud-detection-par.onrender.com/transactions/"
-API_URL = "https://repository-name-fraud-detection-par.onrender.com/transactions/simulate"
+#API_URL = "https://repository-name-fraud-detection-par.onrender.com/transactions/simulate"
 
-CATEGORIES = ['gas_transport', 'grocery_pos', 'home', 'shopping_net', 'misc_net']
-MERCHANTS = ['gas_station_01', 'supermarket_02', 'online_shop_03', 'luxury_watch_04', 'shady_site_05']
-JOBS = ['Engineer', 'Doctor', 'Scientist', 'Analyst']
+# =====================================================
+# VILLES CAMEROUN
+# =====================================================
 
-
-def simulate_transaction(is_fraudulent=False):
-
-    trans = {
-        # 💰 transaction amount
-        "amt": round(random.uniform(10, 50), 2) if not is_fraudulent else round(random.uniform(800, 2000), 2),
-
-        # 🏷️ category
-        "category": random.choice(CATEGORIES) if not is_fraudulent else "luxury_item",
-
-        # 🏪 merchant
-        "merchant": random.choice(MERCHANTS),
-
-        # 👤 user info (IMPORTANT backend fields)
-        "city_pop": 100000,
-        "job": random.choice(JOBS),
-        "gender": random.choice(["M", "F"]),
-
-        # 🌍 location
+CITIES = [
+    {
         "city": "Yaounde",
         "state": "Centre",
         "zip": "00237",
+        "lat": 3.8480,
+        "long": 11.5021,
+        "population": 3000000
+    },
+    {
+        "city": "Douala",
+        "state": "Littoral",
+        "zip": "00236",
+        "lat": 4.0511,
+        "long": 9.7679,
+        "population": 4000000
+    },
+    {
+        "city": "Bafoussam",
+        "state": "Ouest",
+        "zip": "00238",
+        "lat": 5.4781,
+        "long": 10.4170,
+        "population": 900000
+    },
+    {
+        "city": "Garoua",
+        "state": "Nord",
+        "zip": "00239",
+        "lat": 9.3265,
+        "long": 13.3958,
+        "population": 600000
+    },
+    {
+        "city": "Bamenda",
+        "state": "Nord-Ouest",
+        "zip": "00240",
+        "lat": 5.9631,
+        "long": 10.1591,
+        "population": 700000
+    }
+]
 
-        # 💳 card (IMPORTANT FIX ERROR KEYERROR)
-        "card_num": "4532015112830366",
+# =====================================================
+# MARCHANDS NORMAUX
+# =====================================================
 
-        # ⏱️ time features
+NORMAL_MERCHANTS = [
+    ("Jumia Cameroon", "shopping_net"),
+    ("Glotelho", "shopping_net"),
+    ("Carrefour Market", "grocery_pos"),
+    ("Mahima Supermarket", "grocery_pos"),
+    ("TotalEnergies", "gas_transport"),
+    ("Tradex", "gas_transport"),
+    ("Orange Money", "misc_net"),
+    ("MTN Mobile Money", "misc_net"),
+    ("Canal Plus", "home"),
+    ("Dovv", "shopping_net")
+]
+
+# =====================================================
+# MARCHANDS FRAUDE
+# =====================================================
+
+FRAUD_MERCHANTS = [
+    ("shady_site_05", "luxury_item"),
+    ("luxury_watch_04", "luxury_item"),
+    ("fake_jumia_store", "shopping_net")
+]
+
+# =====================================================
+# JOBS
+# =====================================================
+
+JOBS = [
+    "Ingenieur",
+    "Docteur",
+    "Commercant",
+    "Etudiant",
+    "Professeur",
+    "Fonctionnaire",
+    "Analyste",
+    "Informaticien",
+    "Banquier",
+    "Comptable"
+]
+
+# =====================================================
+# CARTES
+# =====================================================
+
+CARDS = [
+    "4532015112830366",
+    "4485275742308327",
+    "4556737586899855",
+    "4917610000000000",
+    "4539578763621486",
+    "4556123412341234",
+    "4485123456789012",
+    "4929123412345678",
+    "4532876543211234",
+    "4555987654321123"
+]
+
+DEVICES = [
+    "Desktop",
+    "Android",
+    "iPhone",
+    "Tablet"
+]
+
+BROWSERS = [
+    "Chrome",
+    "Firefox",
+    "Safari",
+    "Edge"
+]
+
+# =====================================================
+# BUILD TRANSACTION
+# =====================================================
+
+def build_transaction(is_fraud=False):
+
+    city = random.choice(CITIES)
+
+    customer_lat = city["lat"]
+    customer_long = city["long"]
+
+    if is_fraud:
+
+        merchant, category = random.choice(
+            FRAUD_MERCHANTS
+        )
+
+        amount = round(
+            random.uniform(800, 3000),
+            2
+        )
+
+        merchant_lat = random.uniform(
+            35.0,
+            50.0
+        )
+
+        merchant_long = random.uniform(
+            -90.0,
+            -70.0
+        )
+
+    else:
+
+        merchant, category = random.choice(
+            NORMAL_MERCHANTS
+        )
+
+        amount = round(
+            random.uniform(5, 150),
+            2
+        )
+
+        merchant_lat = (
+            customer_lat +
+            random.uniform(-0.03, 0.03)
+        )
+
+        merchant_long = (
+            customer_long +
+            random.uniform(-0.03, 0.03)
+        )
+
+    return {
+
+        # ===================================
+        # MONTANT
+        # ===================================
+
+        "amt": amount,
+
+        # ===================================
+        # MERCHANT
+        # ===================================
+
+        "merchant": merchant,
+        "category": category,
+
+        # ===================================
+        # USER
+        # ===================================
+
+        "city_pop": city["population"],
+        "job": random.choice(JOBS),
+        "gender": random.choice(["M", "F"]),
+
+        "city": city["city"],
+        "state": city["state"],
+        "zip": city["zip"],
+
+        "card_num": random.choice(CARDS),
+
+        # ===================================
+        # TIME
+        # ===================================
+
         "unix_time": int(time.time()),
-        "hour": time.localtime().tm_hour,
-        "day": time.localtime().tm_wday,
+        "hour": datetime.now().hour,
+        "day": datetime.now().weekday(),
 
-        # 📍 coordinates (normal vs fraud logic)
-        "lat": 48.8566,
-        "long": 2.3522,
+        # ===================================
+        # IMPORTANT
+        # ===================================
+        # TON BACKEND ATTEND CES NOMS
+        # ===================================
 
-        "merch_lat": 48.8566 if not is_fraudulent else 40.7128,
-        "merch_long": 2.3522 if not is_fraudulent else -74.0060
+        "customer_lat": customer_lat,
+        "customer_long": customer_long,
+
+        "merchant_lat": merchant_lat,
+        "merchant_long": merchant_long,
+
+        # ===================================
+        # EXTRA
+        # ===================================
+
+        "country_code": "CM",
+        "currency": "XAF",
+
+        "device_type": random.choice(
+            DEVICES
+        ),
+
+        "browser": random.choice(
+            BROWSERS
+        )
     }
 
-    # 📏 distance feature (important for ML model)
-    trans["dist"] = round(
-        ((trans["lat"] - trans["merch_lat"]) ** 2 +
-         (trans["long"] - trans["merch_long"]) ** 2) ** 0.5,
-        6
+# =====================================================
+# SEND
+# =====================================================
+
+def send_transaction(is_fraud=False):
+
+    payload = build_transaction(
+        is_fraud
     )
 
-    print(f"\n[*] Sending {'FRAUDULENT' if is_fraudulent else 'NORMAL'} transaction: ${trans['amt']}")
+    tx_type = (
+        "FRAUD"
+        if is_fraud
+        else "NORMAL"
+    )
+
+    print(
+        f"\n[{tx_type}] "
+        f"{payload['merchant']} | "
+        f"{payload['city']} | "
+        f"{payload['amt']}"
+    )
 
     try:
-        response = requests.post(API_URL, json=trans, timeout=10)
 
-        # ✅ success
+        response = requests.post(
+            API_URL,
+            json=payload,
+            timeout=20
+        )
+
         if response.status_code == 200:
-            result = response.json()
-            print(f"[+] Score = {result.get('score')} | Fraud = {result.get('is_fraud')}")
 
-        # ❌ backend error (VERY IMPORTANT DEBUG)
+            result = response.json()
+
+            print(
+                f"[+] Risk={result.get('risk_level')} | "
+                f"Status={result.get('status')} | "
+                f"Fraud={result.get('prediction')}"
+            )
+
         else:
-            print(f"[ERROR {response.status_code}] {response.text}")
+
+            print(
+                f"[{response.status_code}]",
+                response.text
+            )
 
     except Exception as e:
-        print(f"[CONNECTION ERROR] {e}")
 
+        print(
+            "[ERROR]",
+            str(e)
+        )
+
+# =====================================================
+# MAIN
+# =====================================================
 
 if __name__ == "__main__":
-    print("\n=== ULTRA FRAUD SIMULATION STARTED ===")
-    print("Backend:", API_URL)
+
+    print(
+        "\n=== CAMEROON FRAUD SIMULATOR ==="
+    )
 
     try:
+
         while True:
 
-            # 🔵 normal transactions
-            for _ in range(random.randint(1, 3)):
-                simulate_transaction(False)
-                time.sleep(1.5)
+            for _ in range(
+                random.randint(5, 10)
+            ):
 
-            # 🔴 fraud transaction
-            simulate_transaction(True)
-            time.sleep(3)
+                send_transaction(False)
+
+                time.sleep(
+                    random.uniform(
+                        1,
+                        2
+                    )
+                )
+
+            send_transaction(True)
+
+            time.sleep(
+                random.uniform(
+                    2,
+                    4
+                )
+            )
 
     except KeyboardInterrupt:
-        print("\n[STOPPED] Simulation ended.")
+
+        print(
+            "\nSimulation arrêtée."
+        )
