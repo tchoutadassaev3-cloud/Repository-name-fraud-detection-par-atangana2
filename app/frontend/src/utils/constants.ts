@@ -1,10 +1,10 @@
 // Configuration locale (développement)
-export const API_BASE_URL = 'http://localhost:8000';
-export const WS_URL = 'ws://localhost:8000/ws/alerts';
+// export const API_BASE_URL = 'http://localhost:8000';
+// export const WS_URL = 'ws://localhost:8000/ws/alerts';
 
 // Configuration production (à activer pour le déploiement)
-// export const API_BASE_URL = 'https://repository-name-fraud-detection-par.onrender.com';
-// export const WS_URL = 'wss://repository-name-fraud-detection-par.onrender.com/ws/alerts';
+ export const API_BASE_URL = 'https://repository-name-fraud-detection-par.onrender.com';
+ export const WS_URL = 'wss://repository-name-fraud-detection-par.onrender.com/ws/alerts';
 
 export const RISK_LEVELS = {
   LOW: 'low',

@@ -3,10 +3,10 @@ import random
 import time
 from datetime import datetime
 
-API_URL = "http://127.0.0.1:8000/transactions/simulate"
+#API_URL = "http://127.0.0.1:8000/transactions/simulate"
 #API_URL = "http://127.0.0.1:8000/transactions"
 #API_URL = "https://repository-name-fraud-detection-par.onrender.com/transactions/"
-#API_URL = "https://repository-name-fraud-detection-par.onrender.com/transactions/simulate"
+API_URL = "https://repository-name-fraud-detection-par.onrender.com/transactions/simulate"
 
 # =====================================================
 # VILLES CAMEROUN
