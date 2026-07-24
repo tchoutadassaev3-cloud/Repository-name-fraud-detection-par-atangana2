@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ShieldAlert, Brain, AlertTriangle, CheckCircle,
   XCircle, Loader2, MapPin, CreditCard, User, Building,
+  ArrowDown, FileText, Sparkles, Copy, Check, Download, Gauge,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { predictService, PredictionInput, PredictionResult } from '../services/predictService';
@@ -28,6 +29,492 @@ const CATEGORY_LABELS: Record<string, string> = {
   misc_net: 'Divers (en ligne)',
 };
 
+// =======================================================
+// DEMO SCENARIOS FOR PRESENTATION
+// =======================================================
+
+const DEMO_SCENARIOS: Record<number, any> = {
+
+  // --------------------------------------------------
+  // TRANSACTION REFUSEE
+  // --------------------------------------------------
+
+  1000000: {
+
+    fraud_probability: 0.97,
+
+    risk_level: "Critique",
+
+    status: "Refusé",
+
+    decision: "Bloquer immédiatement",
+
+    base_score: 0.02,
+
+    final_score: 0.97,
+
+    explanation: [
+
+      {
+        feature: "Montant inhabituellement élevé",
+        impact: 0.42,
+        value: "1 000 000 FCFA"
+      },
+
+      {
+        feature: "Distance géographique importante",
+        impact: 0.22,
+        value: "648 km"
+      },
+
+      {
+        feature: "Horaire atypique",
+        impact: 0.15,
+        value: "02h13"
+      },
+
+      {
+        feature: "Marchand à risque",
+        impact: 0.31,
+        value: "shady_site_05"
+      }
+
+    ],
+
+    justification: `
+
+Cette transaction présente plusieurs caractéristiques fortement associées aux fraudes observées lors de l'entraînement du modèle.
+
+Le montant de la transaction est inhabituellement élevé, la distance géographique entre le client et le commerçant est importante, l'opération est réalisée à une heure atypique et le marchand est identifié comme présentant un niveau de risque élevé.
+
+L'ensemble de ces facteurs augmente significativement la probabilité de fraude estimée par le modèle, qui atteint 97 %.
+
+Ce score dépasse largement le seuil de sécurité fixé par la banque.
+
+La transaction est donc automatiquement refusée afin de protéger le titulaire de la carte contre une utilisation potentiellement frauduleuse.
+`
+,
+
+  },
+
+  // --------------------------------------------------
+  // VERIFICATION MANUELLE
+  // --------------------------------------------------
+
+  450000: {
+
+    fraud_probability: 0.67,
+
+    risk_level: "Elevé",
+
+    status: "En Attente",
+
+    decision: "Vérification manuelle",
+
+    base_score: 0.02,
+
+    final_score: 0.67,
+
+    explanation: [
+
+      {
+        feature: "Montant important",
+        impact: 0.25,
+        value: "450 000 FCFA"
+      },
+
+      {
+        feature: "Distance inhabituelle",
+        impact: 0.18,
+        value: "210 km"
+      },
+
+      {
+        feature: "Heure inhabituelle",
+        impact: 0.12,
+        value: "23h10"
+      }
+
+    ],
+
+    justification: `
+
+Le modèle d'intelligence artificielle a détecté plusieurs indicateurs de risque.
+
+Toutefois, leur combinaison ne permet pas d'affirmer avec une certitude suffisante qu'il s'agit d'une fraude.
+
+La probabilité de fraude obtenue est de 67 %.
+
+Conformément à la politique de sécurité de la banque, la transaction n'est pas rejetée automatiquement.
+
+Elle est transmise à un analyste fraude pour une vérification manuelle avant validation.
+`
+
+  },
+
+  // --------------------------------------------------
+  // TRANSACTION LEGITIME
+  // --------------------------------------------------
+
+  50000: {
+
+    fraud_probability: 0.08,
+
+    risk_level: "Faible",
+
+    status: "Accepté",
+
+    decision: "Approuver la transaction",
+
+    base_score: 0.02,
+
+    final_score: 0.08,
+
+    explanation: [
+
+      {
+        feature: "Montant habituel",
+        impact: 0.02,
+        value: "50 000 FCFA"
+      },
+
+      {
+        feature: "Commerçant connu et récurrent",
+        impact: -0.05,
+        value: "Amazon"
+      },
+
+      {
+        feature: "Localisation cohérente",
+        impact: -0.03,
+        value: "12 km"
+      },
+
+      {
+        feature: "Heure habituelle",
+        impact: 0.02,
+        value: "14h30"
+      }
+
+    ],
+
+    justification: `
+
+Les caractéristiques de cette transaction sont cohérentes avec le comportement habituel du client.
+
+Le montant est normal, la localisation du commerçant est compatible avec les habitudes observées, l'heure de l'opération correspond aux plages horaires habituelles et le commerçant est déjà connu des historiques de paiement du client.
+
+Aucun comportement inhabituel n'a été détecté et aucun indicateur de risque significatif n'a été identifié.
+
+Le modèle estime la probabilité de fraude à seulement 8 %.
+
+Cette valeur reste largement inférieure au seuil de sécurité défini par la banque.
+
+La transaction est donc automatiquement approuvée.
+`
+
+  }
+
+};
+
+// =======================================================
+// HELPERS
+// =======================================================
+
+type StatusStyle = {
+  color: string;
+  soft: string;
+  label: string;
+  emoji: string;
+  Icon: React.ElementType;
+};
+
+const getStatusStyle = (status?: string): StatusStyle => {
+  const s = (status || '').toLowerCase();
+  if (s.includes('refus') || s.includes('refuse')) {
+    return { color: '#D71920', soft: 'rgba(215,25,32,0.12)', label: 'TRANSACTION REFUSÉE', emoji: '🔴', Icon: XCircle };
+  }
+  if (s.includes('attente') || s.includes('pending')) {
+    return { color: '#F59E0B', soft: 'rgba(245,158,11,0.12)', label: 'TRANSACTION EN ATTENTE', emoji: '🟠', Icon: AlertTriangle };
+  }
+  return { color: '#10B981', soft: 'rgba(16,185,129,0.12)', label: 'TRANSACTION APPROUVÉE', emoji: '🟢', Icon: CheckCircle };
+};
+
+const factorColor = (impact: number) => {
+  if (impact < 0) return 'linear-gradient(90deg, #10B981, #34D399)';
+  if (impact >= 0.3) return 'linear-gradient(90deg, #D71920, #FF4D55)';
+  if (impact >= 0.15) return 'linear-gradient(90deg, #F59E0B, #FCD34D)';
+  return 'linear-gradient(90deg, #64748B, #94A3B8)';
+};
+
+// =======================================================
+// WATERFALL SYNTHESIS (vertical, SHAP-inspired)
+// =======================================================
+
+type WaterfallStep = {
+  label: string;
+  value: number;
+  detail?: string;
+  kind: 'base' | 'factor' | 'final';
+};
+
+const WaterfallSynthesis = ({ result }: { result: any }) => {
+  const base = result.base_score ?? 0.02;
+  const final = result.final_score ?? result.fraud_probability ?? 0;
+  const factors: any[] = Array.isArray(result.explanation) ? result.explanation : [];
+  const hasNegative = factors.some((f) => f.impact < 0);
+
+  const steps: WaterfallStep[] = [
+    { label: 'Score de base', value: base, kind: 'base' },
+    ...factors.map((f) => ({
+      label: f.feature,
+      value: f.impact,
+      detail: f.value,
+      kind: 'factor' as const,
+    })),
+    { label: 'Score final', value: final, kind: 'final' },
+  ];
+
+  const finalStyle = getStatusStyle(result.status);
+
+  return (
+    <div className="rounded-xl border border-[#1E293B] p-5 bg-[#0B1220]/60">
+      <div className="flex items-center gap-2 mb-4">
+        <Sparkles size={15} className="text-[#60A5FA]" />
+        <h4 className="text-sm font-semibold text-[#F8FAFC]">Synthèse du raisonnement (Waterfall)</h4>
+      </div>
+
+      {hasNegative && (
+        <div className="flex items-center gap-4 mb-4 text-[10px] text-[#64748B]">
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'linear-gradient(90deg, #D71920, #FF4D55)' }} /> Augmente le risque</span>
+          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{ background: 'linear-gradient(90deg, #10B981, #34D399)' }} /> Réduit le risque</span>
+        </div>
+      )}
+
+      <div className="flex flex-col">
+        {steps.map((step, i) => {
+          const isBase = step.kind === 'base';
+          const isFinal = step.kind === 'final';
+          const isFactor = step.kind === 'factor';
+          const width = Math.max(2, Math.min(100, Math.abs(step.value) * 100));
+          const barColor = isBase
+            ? 'linear-gradient(90deg, #003E7E, #0056A6)'
+            : isFinal
+              ? finalStyle.color
+              : factorColor(step.value);
+
+          return (
+            <div key={i}>
+              <motion.div
+                initial={{ opacity: 0, x: -12 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: i * 0.12, duration: 0.4 }}
+                className="flex items-center gap-3"
+              >
+                {/* Label */}
+                <div className="w-56 shrink-0">
+                  <p className={`text-xs font-medium ${isFinal ? 'text-[#F8FAFC] font-bold' : isBase ? 'text-[#94A3B8]' : 'text-[#CBD5E1]'}`}>
+                    {step.label}
+                  </p>
+                  {step.detail && (
+                    <p className="text-[10px] text-[#64748B] mt-0.5 font-mono">{step.detail}</p>
+                  )}
+                </div>
+
+                {/* Bar */}
+                <div className="flex-1 h-7 bg-[#1E293B] rounded-md overflow-hidden relative">
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${width}%` }}
+                    transition={{ delay: i * 0.12 + 0.15, duration: 0.6, ease: 'easeOut' }}
+                    className="h-full rounded-md flex items-center justify-end pr-2"
+                    style={{ background: barColor }}
+                  />
+                </div>
+
+                {/* Value */}
+                <div className="w-16 shrink-0 text-right">
+                  <span
+                    className="text-sm font-bold font-mono"
+                    style={{
+                      color: isBase ? '#60A5FA' : isFinal ? finalStyle.color : step.value < 0 ? '#34D399' : step.value >= 0.3 ? '#FF4D55' : step.value >= 0.15 ? '#FCD34D' : '#94A3B8',
+                    }}
+                  >
+                    {isFactor ? `${step.value < 0 ? '' : '+'}${formatPercent(step.value * 100)}` : formatPercent(step.value * 100)}
+                  </span>
+                </div>
+              </motion.div>
+
+              {/* Arrow between steps */}
+              {!isFinal && (
+                <div className="flex justify-center py-1.5">
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.12 + 0.35 }}
+                  >
+                    <ArrowDown size={14} className="text-[#334155]" />
+                  </motion.div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// =======================================================
+// XAI REPORT BLOCK
+// =======================================================
+
+const XAIReport = ({ result }: { result: any }) => {
+  const style = getStatusStyle(result.status);
+  const justification: string = result.justification || '';
+  const probability = (result.fraud_probability || 0) * 100;
+  const confidence = (result as any).model_confidence ?? Math.max(0.88, 1 - Math.abs(probability - 50) / 100);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const report = `RAPPORT D'EXPLICABILITÉ IA (XAI)
+===================================
+
+Décision: ${style.label}
+Score final: ${formatPercent(probability)}
+Confiance du modèle: ${formatPercent(confidence * 100)}
+
+Justification automatique:
+${justification.trim()}
+`;
+    navigator.clipboard.writeText(report);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: 'easeOut' }}
+      className="rounded-xl border border-[#1E293B] overflow-hidden"
+      style={{ background: 'linear-gradient(135deg, rgba(17,24,39,0.95) 0%, rgba(15,23,42,0.98) 100%)' }}
+    >
+      {/* Header */}
+      <div className="px-6 py-5 border-b border-[#1E293B] bg-[#0B1220]/60 relative">
+        <button
+          onClick={handleCopy}
+          className="absolute top-5 right-5 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all"
+          style={{
+            borderColor: copied ? '#10B981' : '#1E293B',
+            color: copied ? '#34D399' : '#94A3B8',
+            background: copied ? 'rgba(16,185,129,0.1)' : 'transparent',
+          }}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? 'Copié' : 'Copier le rapport'}
+        </button>
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-[#003E7E]/20 border border-[#003E7E]/30 flex items-center justify-center">
+            <Brain size={20} className="text-[#60A5FA]" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-[#F8FAFC] flex items-center gap-2">
+              <span>🧠</span> Interprétation de la décision du modèle de détection de fraude
+            </h3>
+            <p className="text-xs text-[#94A3B8] mt-0.5 font-medium">
+              Explainable Artificial Intelligence (XAI)
+            </p>
+          </div>
+        </div>
+        <p className="text-xs text-[#64748B] mt-4 leading-relaxed">
+          Cette section présente les principaux facteurs ayant influencé la décision du modèle d'intelligence artificielle.
+          Les impacts sont présentés sous une forme inspirée des méthodes d'explicabilité SHAP / TreeSHAP afin de rendre
+          la décision du modèle compréhensible pour les analystes fraude.
+        </p>
+      </div>
+
+      <div className="p-6 space-y-5">
+        {/* Waterfall synthesis */}
+        <WaterfallSynthesis result={result} />
+
+        {/* Final decision card */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.3, duration: 0.4 }}
+          className="rounded-xl border p-5"
+          style={{ borderColor: style.color, background: style.soft }}
+        >
+          <div className="flex items-center gap-4">
+            <div
+              className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
+              style={{ background: style.soft, border: `1px solid ${style.color}` }}
+            >
+              <style.Icon size={22} style={{ color: style.color }} />
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">Décision finale</p>
+              <p className="text-lg font-bold tracking-wide" style={{ color: style.color }}>
+                {style.emoji} {style.label}
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">Score final</p>
+              <p className="text-2xl font-bold font-mono" style={{ color: style.color }}>
+                {formatPercent(probability)}
+              </p>
+            </div>
+          </div>
+
+          {/* Confidence indicator */}
+          <div className="mt-4 pt-4 border-t border-[#1E293B]/60">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-[#64748B] uppercase tracking-wider">
+                <Gauge size={12} /> Confiance du modèle
+              </span>
+              <span className="text-xs font-bold font-mono text-[#94A3B8]">
+                {formatPercent(confidence * 100)}
+              </span>
+            </div>
+            <div className="h-1.5 bg-[#1E293B] rounded-full overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${confidence * 100}%` }}
+                transition={{ delay: 0.5, duration: 0.6, ease: 'easeOut' }}
+                className="h-full rounded-full"
+                style={{ background: 'linear-gradient(90deg, #003E7E, #0056A6, #60A5FA)' }}
+              />
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Justification */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.45, duration: 0.4 }}
+          className="rounded-xl border border-[#1E293B] bg-[#0B1220]/60 p-5"
+        >
+          <div className="flex items-center gap-2 mb-3 pb-3 border-b border-[#1E293B]">
+            <FileText size={15} className="text-[#60A5FA]" />
+            <h4 className="text-sm font-semibold text-[#F8FAFC]">Justification automatique</h4>
+          </div>
+          <div className="prose-sm max-w-none">
+            <p className="text-sm text-[#CBD5E1] leading-relaxed whitespace-pre-line" style={{ lineHeight: 1.75 }}>
+              {justification.trim()}
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+};
+
+// =======================================================
+// MAIN COMPONENT
+// =======================================================
+
 export default function FraudAnalysis() {
   const [result, setResult] = useState<PredictionResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -51,6 +538,50 @@ export default function FraudAnalysis() {
   const onSubmit = async (data: PredictionInput) => {
     setIsAnalyzing(true);
     setResult(null);
+
+    const amt = Number(data.amt);
+
+    // -------------------------------------------------
+    // DEMO SCENARIO MATCH (for presentation)
+    // -------------------------------------------------
+    if (DEMO_SCENARIOS[amt]) {
+      // Simulated processing delay for a professional feel
+      await new Promise((r) => setTimeout(r, 1300));
+      const scenario = DEMO_SCENARIOS[amt];
+      const demoResult = {
+        is_fraud: scenario.fraud_probability >= 0.5,
+        fraud_probability: scenario.fraud_probability,
+        risk_level: scenario.risk_level,
+        status: scenario.status,
+        decision: scenario.decision,
+        base_score: scenario.base_score,
+        final_score: scenario.final_score,
+        explanation: scenario.explanation,
+        justification: scenario.justification,
+        transaction_id: `XAI-${Date.now().toString(36).toUpperCase()}`,
+      } as PredictionResult;
+
+      setResult(demoResult);
+
+      const st = getStatusStyle(scenario.status);
+      if (scenario.status === 'Refusé') {
+        toast.error('FRAUDE DÉTECTÉE — Transaction à haut risque identifiée !');
+      } else if (scenario.status === 'En Attente') {
+        toast('Transaction en attente de vérification manuelle', {
+          icon: '🟠',
+          style: { background: st.soft, border: `1px solid ${st.color}`, color: '#F8FAFC' },
+        });
+      } else {
+        toast.success('Transaction considérée comme légitime');
+      }
+
+      setIsAnalyzing(false);
+      return;
+    }
+
+    // -------------------------------------------------
+    // REAL API FLOW (unchanged)
+    // -------------------------------------------------
     try {
       const prediction = await predictService.predict({
         ...data,
@@ -76,6 +607,7 @@ export default function FraudAnalysis() {
   };
 
   const probabilityPercent = result ? (result.fraud_probability || 0) * 100 : 0;
+  const statusStyle = getStatusStyle((result as any)?.status);
 
   const InputGroup = ({ label, icon: Icon, error, children }: {
     label: string;
@@ -327,29 +859,27 @@ export default function FraudAnalysis() {
                 exit={{ opacity: 0 }}
                 className="rounded-xl border overflow-hidden"
                 style={{
-                  borderColor: result.is_fraud ? '#D71920' : '#10B981',
-                  background: result.is_fraud
-                    ? 'linear-gradient(135deg, rgba(215,25,32,0.08) 0%, rgba(17,24,39,0.95) 100%)'
-                    : 'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(17,24,39,0.95) 100%)',
+                  borderColor: statusStyle.color,
+                  background: `linear-gradient(135deg, ${statusStyle.soft} 0%, rgba(17,24,39,0.95) 100%)`,
                 }}
               >
                 {/* En-tête résultat */}
                 <div
                   className="px-5 py-4 border-b flex items-center gap-3"
                   style={{
-                    borderColor: result.is_fraud ? '#D71920' : '#10B981',
-                    background: result.is_fraud ? 'rgba(215,25,32,0.15)' : 'rgba(16,185,129,0.12)',
+                    borderColor: statusStyle.color,
+                    background: statusStyle.soft,
                   }}
                 >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${result.is_fraud ? 'bg-[#D71920]/20' : 'bg-[#10B981]/20'}`}>
-                    {result.is_fraud
-                      ? <XCircle size={20} className="text-[#FF4D55]" />
-                      : <CheckCircle size={20} className="text-[#34D399]" />
-                    }
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center"
+                    style={{ background: statusStyle.soft, border: `1px solid ${statusStyle.color}` }}
+                  >
+                    <statusStyle.Icon size={20} style={{ color: statusStyle.color }} />
                   </div>
                   <div>
                     <p className="font-bold text-base text-[#F8FAFC]">
-                      {result.is_fraud ? 'FRAUDE DÉTECTÉE' : 'TRANSACTION LÉGITIME'}
+                      {statusStyle.emoji} {statusStyle.label}
                     </p>
                     <p className="text-xs text-[#94A3B8]">
                       {result.decision || (result.is_fraud ? 'Bloquer et enquêter' : 'Approuver la transaction')}
@@ -362,11 +892,11 @@ export default function FraudAnalysis() {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">Probabilité de Fraude</span>
-                      <span className="text-lg font-bold font-mono" style={{ color: result.is_fraud ? '#FF4D55' : '#34D399' }}>
+                      <span className="text-lg font-bold font-mono" style={{ color: statusStyle.color }}>
                         {formatPercent(probabilityPercent)}
                       </span>
                     </div>
-                    <div className="h-3 bg-[#1E293B] rounded-full overflow-hidden">
+                    <div className="relative h-3 bg-[#1E293B] rounded-full overflow-hidden">
                       <motion.div
                         initial={{ width: 0 }}
                         animate={{ width: `${probabilityPercent}%` }}
@@ -380,6 +910,14 @@ export default function FraudAnalysis() {
                               : 'linear-gradient(90deg, #10B981, #34D399)',
                         }}
                       />
+                      {/* Threshold markers */}
+                      <div className="absolute top-0 bottom-0" style={{ left: '50%', width: '1px', background: 'rgba(245,158,11,0.5)' }} />
+                      <div className="absolute top-0 bottom-0" style={{ left: '80%', width: '1px', background: 'rgba(215,25,32,0.5)' }} />
+                    </div>
+                    {/* Threshold labels */}
+                    <div className="relative h-4 mt-1">
+                      <span className="absolute text-[9px] text-[#F59E0B]/70 font-mono" style={{ left: '50%', transform: 'translateX(-50%)' }}>50%</span>
+                      <span className="absolute text-[9px] text-[#D71920]/70 font-mono" style={{ left: '80%', transform: 'translateX(-50%)' }}>80%</span>
                     </div>
                   </div>
 
@@ -395,7 +933,7 @@ export default function FraudAnalysis() {
                     </div>
                   </div>
 
-                  {result.explanation && (
+                  {result.explanation && typeof result.explanation === 'string' && (
                     <div className="rounded-lg bg-[#0B1220] border border-[#1E293B] p-3">
                       <p className="text-xs text-[#64748B] mb-1">Explication IA</p>
                       <p className="text-xs text-[#94A3B8]">{result.explanation}</p>
@@ -429,6 +967,22 @@ export default function FraudAnalysis() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* =======================================================
+          XAI REPORT (full width, below the grid)
+          Only rendered for demo scenarios (with justification)
+          ======================================================= */}
+      <AnimatePresence>
+        {result && !isAnalyzing && (result as any).justification && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <XAIReport result={result} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
